@@ -1,7 +1,12 @@
 # OVApi
 
-An NodeJS API for the OVChipkaart. 
-You can get your current balance and check in and check out points.
+An NodeJS API wrapper for the OVChipkaart. 
+You can use this wrapper to fetch:
+- Your balance
+- Cards
+- Detailed card information
+- Check in points
+- Check out points
 
 ### Install:
 First run ```npm install --save OVApi```
