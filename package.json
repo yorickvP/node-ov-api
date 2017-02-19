@@ -5,6 +5,7 @@
   "main": "./build/OVApi.js",
   "dependencies": {
     "async-q": "^0.3.1",
+    "request": "^2.79.0",
     "request-promise": "^4.1.1"
   },
   "devDependencies": {
@@ -22,10 +23,11 @@
     "gulp-babel": "^6.1.2"
   },
   "scripts": {
-    "build": "./node_modules/.bin/gulp build",
+    "build": "gulp build",
     "start": "node ./build/test.js",
-    "start-dev": "./node_modules/.bin/babel-node ./test.js",
-    "docs": "./node_modules/.bin/esdoc -c .esdoc.json"
+    "start-dev": "babel-node ./test.js",
+    "docs": "esdoc -c .esdoc.json",
+    "prepublish": "gulp build"
   },
   "engines": {
     "node": ">=6.3.0"

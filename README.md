@@ -14,7 +14,7 @@ First run ```npm install --save OVApi```
 Than add ```const OVApi = require("OVApi")``` or ```import OVApi from "OVApi"``` 
 
 ### Examples:
-```
+```javascript
 let instance = new OVApi(username, password);
 
 instance.authorize().then(() => { //Logs the user in and makes sure the tokens are all set
