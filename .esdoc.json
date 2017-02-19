@@ -1,0 +1,20 @@
+{
+    "source": "./src",
+    "destination": "./docs",
+    "includes": [".js$"],
+    "excludes": ["(node_modules|build|docs|views|gulpfile*|test.js)"],
+    "access": ["public", "protected", "private"],
+    "autoPrivate": true,
+    "unexportIdentifier": false,
+    "undocumentIdentifier": true,
+    "builtinExternal": true,
+    "index": "./README.md",
+    "package": "./package.json",
+    "coverage": true,
+    "includeSource": true,
+    "title": "OV Api",
+    "plugins": [{
+        "name": "esdoc-es7-plugin"
+    }],
+    "lint": true
+}
