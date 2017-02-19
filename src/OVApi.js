@@ -235,6 +235,6 @@ export default class OVApi {
 	 * @see {@link getCards}
 	 */
 	getDetailedCardInfo(mediumId = x('MediumId')) {
-		return this._tlsRequest("/card/", {mediumId});
+		return this._tlsRequest("card/", {mediumId});
 	}
 }
