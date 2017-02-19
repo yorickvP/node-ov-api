@@ -1,6 +1,6 @@
 # OVApi
 
-This is an node library to access the public transport system in the Netherlands. 
+An NodeJS API for the OVChipkaart. 
 You can get your current balance and check in and check out points.
 
 ### Install:
