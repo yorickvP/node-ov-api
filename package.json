@@ -1,0 +1,41 @@
+{
+  "name": "ovchip-api",
+  "version": "1.0.1",
+  "description": "OV Chipkaart API",
+  "main": "./src/index.js",
+  "dependencies": {
+    "async-q": "^0.3.1",
+    "request": "^2.79.0",
+    "request-promise": "^4.1.1"
+  },
+  "devDependencies": {
+    "babel-cli": "^6.18.0",
+    "babel-eslint": "^7.1.1",
+    "babel-plugin-transform-async-to-generator": "^6.16.0",
+    "babel-plugin-transform-runtime": "^6.15.0",
+    "babel-plugin-transform-strict-mode": "^6.18.0",
+    "babel-preset-env": "^1.1.8",
+    "babel-register": "^6.18.0",
+    "del": "^2.2.2",
+    "esdoc": "^0.4.8",
+    "esdoc-es7-plugin": "0.0.3",
+    "gulp": "^3.9.1",
+    "gulp-babel": "^6.1.2"
+  },
+  "scripts": {
+    "build": "gulp build",
+    "start": "node ./build/test.js",
+    "start-dev": "babel-node ./test.js",
+    "docs": "esdoc -c .esdoc.json",
+    "prepublish": "gulp build",
+    "gh-pages": "./update-gh-pages.sh"
+  },
+  "engines": {
+    "node": ">=6.3.0"
+  },
+  "author": "Bart0110 (OVChip group)",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/OVChip/ovchipapi-node.git"
+  }
+}

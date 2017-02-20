@@ -1,0 +1,1551 @@
+[
+  {
+    "__docId__": 0,
+    "kind": "file",
+    "static": true,
+    "variation": null,
+    "name": "src/index.js",
+    "memberof": null,
+    "longname": "src/index.js",
+    "access": null,
+    "description": null,
+    "lineNumber": 1,
+    "content": "import requestPromise from \"request-promise\";\n\nimport x from \"./throw-if-missing\";\n\n\nconst normalize_time = (t) => new Date((t / 1000 | 0) * 1000);\nconst normalize_record_time = (data) => Object.assign(data, {\n\ttransactionDateTime: normalize_time(data.transactionDateTime)\n});\n\n\n/**\n * Author: Bart0110. <br>\n * This library can be used to access basic data from the OV-chipcard network in the Netherlands.\n */\nexport default class OVApi {\n\n\t/** Creates an instance of OVApi.\n\t * @param {String} username - Username used to access ov-chipkaart.nl. This field is required.\n\t * @param {String} password - Password used to access ov-chipkaart.nl. This field is required.\n\t * @param {String} [clientId=nmOIiEJO5khvtLBK9xad3UkkS8Ua] - Special client identifier used to access ov-chipkaart.nl.\n\t * @param {String} [clientSecret=FE8ef6bVBiyN0NeyUJ5VOWdelvQa] - Special client secret bound to the client identifier.\n\t */\n\tconstructor(username = x('Username'), password = x('Password'), clientId = \"nmOIiEJO5khvtLBK9xad3UkkS8Ua\", clientSecret = \"FE8ef6bVBiyN0NeyUJ5VOWdelvQa\") {\n\t\t/**\n\t\t * The client identifier.\n\t\t * @type {String}\n\t\t * @private\n\t\t */\n\t\tthis._clientId = clientId;\n\n\t\t/**\n\t\t * The client secret.\n\t\t * @type {String}\n\t\t * @private\n\t\t */\n\t\tthis._clientSecret = clientSecret;\n\n\t\t/**\n\t\t * The username.\n\t\t * @type {String}\n\t\t * @private\n\t\t */\n\t\tthis._username = username;\n\n\t\t/**\n\t\t * The password.\n\t\t * @type {String}\n\t\t * @private\n\t\t */\n\t\tthis._password = password;\n\n\t\t/**\n\t\t * Token from logging into ov-chipkaart.nl. Note: this token is not authorized to do actions like fetching transactions.\n\t\t * @type {(String|null)}\n\t\t * @private\n\t\t */\n\t\tthis._loginToken = null;\n\n\t\t/**\n\t\t * The refresh token is used to refresh the 'main' token for accesing ov-chipkaart.nl.\n\t\t * @type {(String|null)}\n\t\t * @private\n\t\t */\n\t\tthis._refreshToken = null;\n\n\t\t/**\n\t\t * This token is authorized with the login token. This token is used to perform actions like fetching transactions.\n\t\t * @type {(String|null)}\n\t\t * @private\n\t\t * @see {@link _loginToken}\n\t\t */\n\t\tthis._dataToken = null;\n\n\t\t/**\n\t\t * As of now it does nothing. This is reserverd in case we need to use it.\n\t\t * @type {(String|null)}\n\t\t * @private\n\t\t */\n\t\tthis._accessToken = null;\n\n\t\t/**\n\t\t * At the moment the date the login token will expire.\n\t\t * @type {(Date|null)}\n\t\t * @private\n\t\t */\n\t\tthis._expireDate = null;\n\n\t\t/**\n\t\t * This object holds all the attached cards to the account.\n\t\t * @type {(JSON|null)}\n\t\t * @private\n\t\t */\n\t\tthis._cards = null;\n\n\t\t/**\n\t\t * Endpoint used to get an access token.\n\t\t * @type {String}\n\t\t * @private\n\t\t */\n\t\tthis._loginEndpoint = 'https://login.ov-chipkaart.nl/oauth2/token';\n\n\t\t/**\n\t\t * Endpoint used to perform certain actions.\n\t\t * @type {String}\n\t\t * @private\n\t\t * @see {@link getCards}\n\t\t * @see {@link getTransactions}\n\t\t */\n\t\tthis._actionEndpoint = 'https://api2.ov-chipkaart.nl/femobilegateway/v1';\n\n\t\treturn this;\n\t}\n\n\t/**\n\t * Make a request to the oauth url\n\t * @param {Object} form - Parameters to pass to the url.\n\t * @return {Promise} - Resolve returns token used to create data token. Reject contains an error message that occured.\n\t */\n\t_oAuthRequest(form) {\n\t\treturn requestPromise({\n\t\t\tmethod: 'POST',\n\t\t\turi: this._loginEndpoint,\n\t\t\tform,\n\t\t}).then((body) => {\n\t\t\tbody = JSON.parse(body);\n\n\t\t\tthis._loginToken = body['id_token'];\n\t\t\tthis._refreshToken = body['refresh_token'];\n\t\t\tthis._accessToken = body['access_token'];\n\t\t\tthis._expireDate = new Date(Date.now() + (body['expires_in'] * 1000));\n\t\t\treturn this._loginToken;\n\t\t}).catch((error) => {\n\t\t\tthrow ({\n\t\t\t\thtmlCode: error['statusCode'],\n\t\t\t\tbody: JSON.parse(error['response']['body'])\n\t\t\t});\n\t\t});\n\t}\n\n\n\t/**\n\t * Login into ov-chipkaart.nl.\n\t * @return {Promise} - Resolve returns token used to create data token. Reject returns an error message that occured while logging in.\n\t */\n\t_login() {\n\t\tif (new Date() < this._expireDate && this._loginToken != null)\n\t\t\treturn Promise.resolve(this._loginToken);\n\n\t\treturn this._oAuthRequest({\n\t\t\tclient_id: this._clientId,\n\t\t\tclient_secret: this._clientSecret,\n\t\t\tusername: this._username,\n\t\t\tpassword: this._password,\n\t\t\tgrant_type: \"password\",\n\t\t\tscope: \"openid\"\n\t\t});\n\t}\n\n\t/**\n\t * Create data token. This method automatically logs you in if you haven't called login()\n\t * @return {Promise} - Resolve returns token used to access data. Reject returns an error message that occured while fetching the token.\n\t * @see {@link _login}\n\t */\n\tauthorize() {\n\t\treturn this._login().then((authenticationToken) => {\n\t\t\treturn this._tlsRequest('api/authorize', {authenticationToken});\n\t\t}).then(token => {\n\t\t\tthis._dataToken = token;\n\t\t\treturn token;\n\t\t});\n\t}\n\n\t/**\n\t * Refresh access token.\n\t * @return {Promise} - Resolve returns token used to create data token. Reject returns an error message that occured while refreshing the token.\n\t */\n\trefreshToken() {\n\t\t// if (new Date() < this._expireDate && this._loginToken != null)\n\t\t// \treturn Promise.resolve(this._loginToken);\n\n\t\treturn this._oAuthRequest({\n\t\t\tclient_id: this._clientId,\n\t\t\tclient_secret: this._clientSecret,\n\t\t\trefresh_token: this._refreshToken,\n\t\t\tgrant_type: \"refresh_token\"\n\t\t});\n\t}\n\n\t/**\n\t * Make a request to the tls API\n\t * @param {String} endpoint - API endpoint to call. This field is required.\n\t * @param {Object} [form={}] - Parameters to submit.\n\t * @return {Promise} - Resolve returns api response. Reject contains an error message if the API returned a failure or the API request failed.\n\t *\n\t */\n\t_tlsRequest(endpoint = x('endpoint'), form = {}) {\n\t\treturn requestPromise({\n\t\t\tmethod: 'POST',\n\t\t\turi: `${this._actionEndpoint}/${endpoint}`,\n\t\t\tform: Object.assign({\n\t\t\t\tauthorizationToken: this._dataToken,\n\t\t\t}, form)\n\t\t}).then(body => {\n\t\t\tconst {c,o,e} = JSON.parse(body);\n\t\t\tif (c !== 200) {\n\t\t\t\tthrow new Error(\"TLS returned error code \" + c, e);\n\t\t\t}\n\t\t\treturn o;\n\t\t});\n\t}\n\n\t/**\n\t * Get all attached cards to the account.\n\t * @return {Promise} - Resolve returns all cards attached to the account. Reject returns an error message that occured while fetching the cards.\n\t */\n\tgetCards() {\n\t\treturn this._tlsRequest('cards/list');\n\t}\n\n\n\t/**\n\t * Get transactions with optional parameters.\n\t * @param {Number} mediumId - Unique card id. You can pull this from getCards(). This field is required.\n\t * @param {Object} NRC the 'nextRequestContext' used to get more data.\n\t * @return {Promise} - Resolve returns transactions. Reject returns an error message that occured while fetching the transactions.\n\t * @see {@link getCards}\n\t */\n\tgetTransactionsNRC(mediumId = x('MediumId'), nrc = {}) {\n\t\treturn this._tlsRequest(\"transactions\", Object.assign({mediumId}, nrc))\n\t\t\t.then(o => Object.assign(o, {\n\t\t\t\trecords: o.records.map(normalize_record_time),\n\t\t\t\tcontinuation: () => this.getTransactionsNRC(mediumId, o['nextRequestContext'])\n\t\t\t}));\n\t}\n\n\t/**\n\t * Get transactions between two dates.\n\t * @param {Number} mediumId - Unique card id. You can pull this from getCards(). This field is required.\n\t * @param {String} [startDate=current_date] - The date were the server should start looking. Correct syntax = `YYYY-MM-DD`.\n\t * @param {String} [endDate=current_date] - The date were the server should stop looking. Correct syntax = `YYYY-MM-DD`.\n\t * @param {Number} [offset=0] - How many records the server should skip.\n\t * @return {Promise} - Resolve returns transactions. Reject returns an error message that occured while fetching the transactions.\n\t * @see {@link getCards}\n\t */\n\tgetTransactions(mediumId = x('MediumId'), startDate = (new Date().toISOString().slice(0, 10)),\n\t\t\t\t   endDate = (new Date().toISOString().slice(0, 10)), offset = 0) {\n\t\treturn this.getTransactionsNRC(mediumId, {offset, startDate, endDate});\n\t}\n\n\t/**\n\t * Get detailed card info such as: balance, when the balance was last updated, auto reload information and the date when the card expires.\n\t * @param {Number} mediumId - Unique card id. You can pull this from getCards(). This field is required.\n\t * @return {Promise} - Resolve returns detailed information about the card. Reject returns an error message that occured while fetching the transactions.\n\t * @see {@link getCards}\n\t */\n\tgetDetailedCardInfo(mediumId = x('MediumId')) {\n\t\treturn this._tlsRequest(\"card/\", {mediumId});\n\t}\n}\n"
+  },
+  {
+    "__docId__": 1,
+    "kind": "variable",
+    "static": true,
+    "variation": null,
+    "name": "normalize_time",
+    "memberof": "src/index.js",
+    "longname": "src/index.js~normalize_time",
+    "access": null,
+    "export": false,
+    "importPath": "ovchip-api",
+    "importStyle": null,
+    "description": null,
+    "lineNumber": 6,
+    "undocument": true,
+    "type": {
+      "types": [
+        "*"
+      ]
+    }
+  },
+  {
+    "__docId__": 2,
+    "kind": "variable",
+    "static": true,
+    "variation": null,
+    "name": "normalize_record_time",
+    "memberof": "src/index.js",
+    "longname": "src/index.js~normalize_record_time",
+    "access": null,
+    "export": false,
+    "importPath": "ovchip-api",
+    "importStyle": null,
+    "description": null,
+    "lineNumber": 7,
+    "undocument": true,
+    "type": {
+      "types": [
+        "*"
+      ]
+    }
+  },
+  {
+    "__docId__": 3,
+    "kind": "class",
+    "static": true,
+    "variation": null,
+    "name": "OVApi",
+    "memberof": "src/index.js",
+    "longname": "src/index.js~OVApi",
+    "access": null,
+    "export": true,
+    "importPath": "ovchip-api",
+    "importStyle": "OVApi",
+    "description": "Author: Bart0110. <br>\nThis library can be used to access basic data from the OV-chipcard network in the Netherlands.",
+    "lineNumber": 16,
+    "interface": false
+  },
+  {
+    "__docId__": 4,
+    "kind": "constructor",
+    "static": false,
+    "variation": null,
+    "name": "constructor",
+    "memberof": "src/index.js~OVApi",
+    "longname": "src/index.js~OVApi#constructor",
+    "access": null,
+    "description": "Creates an instance of OVApi.",
+    "lineNumber": 24,
+    "params": [
+      {
+        "nullable": null,
+        "types": [
+          "String"
+        ],
+        "spread": false,
+        "optional": false,
+        "name": "username",
+        "description": "Username used to access ov-chipkaart.nl. This field is required."
+      },
+      {
+        "nullable": null,
+        "types": [
+          "String"
+        ],
+        "spread": false,
+        "optional": false,
+        "name": "password",
+        "description": "Password used to access ov-chipkaart.nl. This field is required."
+      },
+      {
+        "nullable": null,
+        "types": [
+          "String"
+        ],
+        "spread": false,
+        "optional": true,
+        "defaultValue": "nmOIiEJO5khvtLBK9xad3UkkS8Ua",
+        "defaultRaw": "nmOIiEJO5khvtLBK9xad3UkkS8Ua",
+        "name": "clientId",
+        "description": "Special client identifier used to access ov-chipkaart.nl."
+      },
+      {
+        "nullable": null,
+        "types": [
+          "String"
+        ],
+        "spread": false,
+        "optional": true,
+        "defaultValue": "FE8ef6bVBiyN0NeyUJ5VOWdelvQa",
+        "defaultRaw": "FE8ef6bVBiyN0NeyUJ5VOWdelvQa",
+        "name": "clientSecret",
+        "description": "Special client secret bound to the client identifier."
+      }
+    ],
+    "generator": false
+  },
+  {
+    "__docId__": 5,
+    "kind": "member",
+    "static": false,
+    "variation": null,
+    "name": "_clientId",
+    "memberof": "src/index.js~OVApi",
+    "longname": "src/index.js~OVApi#_clientId",
+    "access": "private",
+    "description": "The client identifier.",
+    "lineNumber": 30,
+    "type": {
+      "nullable": null,
+      "types": [
+        "String"
+      ],
+      "spread": false,
+      "description": null
+    }
+  },
+  {
+    "__docId__": 6,
+    "kind": "member",
+    "static": false,
+    "variation": null,
+    "name": "_clientSecret",
+    "memberof": "src/index.js~OVApi",
+    "longname": "src/index.js~OVApi#_clientSecret",
+    "access": "private",
+    "description": "The client secret.",
+    "lineNumber": 37,
+    "type": {
+      "nullable": null,
+      "types": [
+        "String"
+      ],
+      "spread": false,
+      "description": null
+    }
+  },
+  {
+    "__docId__": 7,
+    "kind": "member",
+    "static": false,
+    "variation": null,
+    "name": "_username",
+    "memberof": "src/index.js~OVApi",
+    "longname": "src/index.js~OVApi#_username",
+    "access": "private",
+    "description": "The username.",
+    "lineNumber": 44,
+    "type": {
+      "nullable": null,
+      "types": [
+        "String"
+      ],
+      "spread": false,
+      "description": null
+    }
+  },
+  {
+    "__docId__": 8,
+    "kind": "member",
+    "static": false,
+    "variation": null,
+    "name": "_password",
+    "memberof": "src/index.js~OVApi",
+    "longname": "src/index.js~OVApi#_password",
+    "access": "private",
+    "description": "The password.",
+    "lineNumber": 51,
+    "type": {
+      "nullable": null,
+      "types": [
+        "String"
+      ],
+      "spread": false,
+      "description": null
+    }
+  },
+  {
+    "__docId__": 9,
+    "kind": "member",
+    "static": false,
+    "variation": null,
+    "name": "_loginToken",
+    "memberof": "src/index.js~OVApi",
+    "longname": "src/index.js~OVApi#_loginToken",
+    "access": "private",
+    "description": "Token from logging into ov-chipkaart.nl. Note: this token is not authorized to do actions like fetching transactions.",
+    "lineNumber": 58,
+    "type": {
+      "nullable": null,
+      "types": [
+        "String",
+        "null"
+      ],
+      "spread": false,
+      "description": null
+    }
+  },
+  {
+    "__docId__": 10,
+    "kind": "member",
+    "static": false,
+    "variation": null,
+    "name": "_refreshToken",
+    "memberof": "src/index.js~OVApi",
+    "longname": "src/index.js~OVApi#_refreshToken",
+    "access": "private",
+    "description": "The refresh token is used to refresh the 'main' token for accesing ov-chipkaart.nl.",
+    "lineNumber": 65,
+    "type": {
+      "nullable": null,
+      "types": [
+        "String",
+        "null"
+      ],
+      "spread": false,
+      "description": null
+    }
+  },
+  {
+    "__docId__": 11,
+    "kind": "member",
+    "static": false,
+    "variation": null,
+    "name": "_dataToken",
+    "memberof": "src/index.js~OVApi",
+    "longname": "src/index.js~OVApi#_dataToken",
+    "access": "private",
+    "description": "This token is authorized with the login token. This token is used to perform actions like fetching transactions.",
+    "see": [
+      "{@link _loginToken}"
+    ],
+    "lineNumber": 73,
+    "type": {
+      "nullable": null,
+      "types": [
+        "String",
+        "null"
+      ],
+      "spread": false,
+      "description": null
+    }
+  },
+  {
+    "__docId__": 12,
+    "kind": "member",
+    "static": false,
+    "variation": null,
+    "name": "_accessToken",
+    "memberof": "src/index.js~OVApi",
+    "longname": "src/index.js~OVApi#_accessToken",
+    "access": "private",
+    "description": "As of now it does nothing. This is reserverd in case we need to use it.",
+    "lineNumber": 80,
+    "type": {
+      "nullable": null,
+      "types": [
+        "String",
+        "null"
+      ],
+      "spread": false,
+      "description": null
+    }
+  },
+  {
+    "__docId__": 13,
+    "kind": "member",
+    "static": false,
+    "variation": null,
+    "name": "_expireDate",
+    "memberof": "src/index.js~OVApi",
+    "longname": "src/index.js~OVApi#_expireDate",
+    "access": "private",
+    "description": "At the moment the date the login token will expire.",
+    "lineNumber": 87,
+    "type": {
+      "nullable": null,
+      "types": [
+        "Date",
+        "null"
+      ],
+      "spread": false,
+      "description": null
+    }
+  },
+  {
+    "__docId__": 14,
+    "kind": "member",
+    "static": false,
+    "variation": null,
+    "name": "_cards",
+    "memberof": "src/index.js~OVApi",
+    "longname": "src/index.js~OVApi#_cards",
+    "access": "private",
+    "description": "This object holds all the attached cards to the account.",
+    "lineNumber": 94,
+    "type": {
+      "nullable": null,
+      "types": [
+        "JSON",
+        "null"
+      ],
+      "spread": false,
+      "description": null
+    }
+  },
+  {
+    "__docId__": 15,
+    "kind": "member",
+    "static": false,
+    "variation": null,
+    "name": "_loginEndpoint",
+    "memberof": "src/index.js~OVApi",
+    "longname": "src/index.js~OVApi#_loginEndpoint",
+    "access": "private",
+    "description": "Endpoint used to get an access token.",
+    "lineNumber": 101,
+    "type": {
+      "nullable": null,
+      "types": [
+        "String"
+      ],
+      "spread": false,
+      "description": null
+    }
+  },
+  {
+    "__docId__": 16,
+    "kind": "member",
+    "static": false,
+    "variation": null,
+    "name": "_actionEndpoint",
+    "memberof": "src/index.js~OVApi",
+    "longname": "src/index.js~OVApi#_actionEndpoint",
+    "access": "private",
+    "description": "Endpoint used to perform certain actions.",
+    "see": [
+      "{@link getCards}",
+      "{@link getTransactions}"
+    ],
+    "lineNumber": 110,
+    "type": {
+      "nullable": null,
+      "types": [
+        "String"
+      ],
+      "spread": false,
+      "description": null
+    }
+  },
+  {
+    "__docId__": 17,
+    "kind": "method",
+    "static": false,
+    "variation": null,
+    "name": "_oAuthRequest",
+    "memberof": "src/index.js~OVApi",
+    "longname": "src/index.js~OVApi#_oAuthRequest",
+    "access": null,
+    "description": "Make a request to the oauth url",
+    "lineNumber": 120,
+    "params": [
+      {
+        "nullable": null,
+        "types": [
+          "Object"
+        ],
+        "spread": false,
+        "optional": false,
+        "name": "form",
+        "description": "Parameters to pass to the url."
+      }
+    ],
+    "return": {
+      "nullable": null,
+      "types": [
+        "Promise"
+      ],
+      "spread": false,
+      "description": "Resolve returns token used to create data token. Reject contains an error message that occured."
+    },
+    "generator": false
+  },
+  {
+    "__docId__": 18,
+    "kind": "member",
+    "static": false,
+    "variation": null,
+    "name": "_loginToken",
+    "memberof": "src/index.js~OVApi",
+    "longname": "src/index.js~OVApi#_loginToken",
+    "access": null,
+    "description": null,
+    "lineNumber": 128,
+    "undocument": true,
+    "type": {
+      "types": [
+        "*"
+      ]
+    }
+  },
+  {
+    "__docId__": 19,
+    "kind": "member",
+    "static": false,
+    "variation": null,
+    "name": "_refreshToken",
+    "memberof": "src/index.js~OVApi",
+    "longname": "src/index.js~OVApi#_refreshToken",
+    "access": null,
+    "description": null,
+    "lineNumber": 129,
+    "undocument": true,
+    "type": {
+      "types": [
+        "*"
+      ]
+    }
+  },
+  {
+    "__docId__": 20,
+    "kind": "member",
+    "static": false,
+    "variation": null,
+    "name": "_accessToken",
+    "memberof": "src/index.js~OVApi",
+    "longname": "src/index.js~OVApi#_accessToken",
+    "access": null,
+    "description": null,
+    "lineNumber": 130,
+    "undocument": true,
+    "type": {
+      "types": [
+        "*"
+      ]
+    }
+  },
+  {
+    "__docId__": 21,
+    "kind": "member",
+    "static": false,
+    "variation": null,
+    "name": "_expireDate",
+    "memberof": "src/index.js~OVApi",
+    "longname": "src/index.js~OVApi#_expireDate",
+    "access": null,
+    "description": null,
+    "lineNumber": 131,
+    "undocument": true,
+    "type": {
+      "types": [
+        "*"
+      ]
+    }
+  },
+  {
+    "__docId__": 22,
+    "kind": "method",
+    "static": false,
+    "variation": null,
+    "name": "_login",
+    "memberof": "src/index.js~OVApi",
+    "longname": "src/index.js~OVApi#_login",
+    "access": null,
+    "description": "Login into ov-chipkaart.nl.",
+    "lineNumber": 146,
+    "params": [],
+    "return": {
+      "nullable": null,
+      "types": [
+        "Promise"
+      ],
+      "spread": false,
+      "description": "Resolve returns token used to create data token. Reject returns an error message that occured while logging in."
+    },
+    "generator": false
+  },
+  {
+    "__docId__": 23,
+    "kind": "method",
+    "static": false,
+    "variation": null,
+    "name": "authorize",
+    "memberof": "src/index.js~OVApi",
+    "longname": "src/index.js~OVApi#authorize",
+    "access": null,
+    "description": "Create data token. This method automatically logs you in if you haven't called login()",
+    "see": [
+      "{@link _login}"
+    ],
+    "lineNumber": 165,
+    "params": [],
+    "return": {
+      "nullable": null,
+      "types": [
+        "Promise"
+      ],
+      "spread": false,
+      "description": "Resolve returns token used to access data. Reject returns an error message that occured while fetching the token."
+    },
+    "generator": false
+  },
+  {
+    "__docId__": 24,
+    "kind": "member",
+    "static": false,
+    "variation": null,
+    "name": "_dataToken",
+    "memberof": "src/index.js~OVApi",
+    "longname": "src/index.js~OVApi#_dataToken",
+    "access": null,
+    "description": null,
+    "lineNumber": 169,
+    "undocument": true,
+    "type": {
+      "types": [
+        "*"
+      ]
+    }
+  },
+  {
+    "__docId__": 25,
+    "kind": "method",
+    "static": false,
+    "variation": null,
+    "name": "refreshToken",
+    "memberof": "src/index.js~OVApi",
+    "longname": "src/index.js~OVApi#refreshToken",
+    "access": null,
+    "description": "Refresh access token.",
+    "lineNumber": 178,
+    "params": [],
+    "return": {
+      "nullable": null,
+      "types": [
+        "Promise"
+      ],
+      "spread": false,
+      "description": "Resolve returns token used to create data token. Reject returns an error message that occured while refreshing the token."
+    },
+    "generator": false
+  },
+  {
+    "__docId__": 26,
+    "kind": "method",
+    "static": false,
+    "variation": null,
+    "name": "_tlsRequest",
+    "memberof": "src/index.js~OVApi",
+    "longname": "src/index.js~OVApi#_tlsRequest",
+    "access": null,
+    "description": "Make a request to the tls API",
+    "lineNumber": 197,
+    "params": [
+      {
+        "nullable": null,
+        "types": [
+          "String"
+        ],
+        "spread": false,
+        "optional": false,
+        "name": "endpoint",
+        "description": "API endpoint to call. This field is required."
+      },
+      {
+        "nullable": null,
+        "types": [
+          "Object"
+        ],
+        "spread": false,
+        "optional": true,
+        "defaultValue": "{}",
+        "defaultRaw": {},
+        "name": "form",
+        "description": "Parameters to submit."
+      }
+    ],
+    "return": {
+      "nullable": null,
+      "types": [
+        "Promise"
+      ],
+      "spread": false,
+      "description": "Resolve returns api response. Reject contains an error message if the API returned a failure or the API request failed."
+    },
+    "generator": false
+  },
+  {
+    "__docId__": 27,
+    "kind": "method",
+    "static": false,
+    "variation": null,
+    "name": "getCards",
+    "memberof": "src/index.js~OVApi",
+    "longname": "src/index.js~OVApi#getCards",
+    "access": null,
+    "description": "Get all attached cards to the account.",
+    "lineNumber": 217,
+    "params": [],
+    "return": {
+      "nullable": null,
+      "types": [
+        "Promise"
+      ],
+      "spread": false,
+      "description": "Resolve returns all cards attached to the account. Reject returns an error message that occured while fetching the cards."
+    },
+    "generator": false
+  },
+  {
+    "__docId__": 28,
+    "kind": "method",
+    "static": false,
+    "variation": null,
+    "name": "getTransactionsNRC",
+    "memberof": "src/index.js~OVApi",
+    "longname": "src/index.js~OVApi#getTransactionsNRC",
+    "access": null,
+    "description": "Get transactions with optional parameters.",
+    "see": [
+      "{@link getCards}"
+    ],
+    "lineNumber": 229,
+    "params": [
+      {
+        "nullable": null,
+        "types": [
+          "Number"
+        ],
+        "spread": false,
+        "optional": false,
+        "name": "mediumId",
+        "description": "Unique card id. You can pull this from getCards(). This field is required."
+      },
+      {
+        "nullable": null,
+        "types": [
+          "Object"
+        ],
+        "spread": false,
+        "optional": false,
+        "name": "NRC",
+        "description": "the 'nextRequestContext' used to get more data."
+      }
+    ],
+    "return": {
+      "nullable": null,
+      "types": [
+        "Promise"
+      ],
+      "spread": false,
+      "description": "Resolve returns transactions. Reject returns an error message that occured while fetching the transactions."
+    },
+    "generator": false
+  },
+  {
+    "__docId__": 29,
+    "kind": "method",
+    "static": false,
+    "variation": null,
+    "name": "getTransactions",
+    "memberof": "src/index.js~OVApi",
+    "longname": "src/index.js~OVApi#getTransactions",
+    "access": null,
+    "description": "Get transactions between two dates.",
+    "see": [
+      "{@link getCards}"
+    ],
+    "lineNumber": 246,
+    "params": [
+      {
+        "nullable": null,
+        "types": [
+          "Number"
+        ],
+        "spread": false,
+        "optional": false,
+        "name": "mediumId",
+        "description": "Unique card id. You can pull this from getCards(). This field is required."
+      },
+      {
+        "nullable": null,
+        "types": [
+          "String"
+        ],
+        "spread": false,
+        "optional": true,
+        "defaultValue": "current_date",
+        "defaultRaw": "current_date",
+        "name": "startDate",
+        "description": "The date were the server should start looking. Correct syntax = `YYYY-MM-DD`."
+      },
+      {
+        "nullable": null,
+        "types": [
+          "String"
+        ],
+        "spread": false,
+        "optional": true,
+        "defaultValue": "current_date",
+        "defaultRaw": "current_date",
+        "name": "endDate",
+        "description": "The date were the server should stop looking. Correct syntax = `YYYY-MM-DD`."
+      },
+      {
+        "nullable": null,
+        "types": [
+          "Number"
+        ],
+        "spread": false,
+        "optional": true,
+        "defaultValue": "0",
+        "defaultRaw": 0,
+        "name": "offset",
+        "description": "How many records the server should skip."
+      }
+    ],
+    "return": {
+      "nullable": null,
+      "types": [
+        "Promise"
+      ],
+      "spread": false,
+      "description": "Resolve returns transactions. Reject returns an error message that occured while fetching the transactions."
+    },
+    "generator": false
+  },
+  {
+    "__docId__": 30,
+    "kind": "method",
+    "static": false,
+    "variation": null,
+    "name": "getDetailedCardInfo",
+    "memberof": "src/index.js~OVApi",
+    "longname": "src/index.js~OVApi#getDetailedCardInfo",
+    "access": null,
+    "description": "Get detailed card info such as: balance, when the balance was last updated, auto reload information and the date when the card expires.",
+    "see": [
+      "{@link getCards}"
+    ],
+    "lineNumber": 257,
+    "params": [
+      {
+        "nullable": null,
+        "types": [
+          "Number"
+        ],
+        "spread": false,
+        "optional": false,
+        "name": "mediumId",
+        "description": "Unique card id. You can pull this from getCards(). This field is required."
+      }
+    ],
+    "return": {
+      "nullable": null,
+      "types": [
+        "Promise"
+      ],
+      "spread": false,
+      "description": "Resolve returns detailed information about the card. Reject returns an error message that occured while fetching the transactions."
+    },
+    "generator": false
+  },
+  {
+    "__docId__": 31,
+    "kind": "file",
+    "static": true,
+    "variation": null,
+    "name": "src/throw-if-missing.js",
+    "memberof": null,
+    "longname": "src/throw-if-missing.js",
+    "access": null,
+    "description": null,
+    "lineNumber": 1,
+    "content": "'use strict';\n\nmodule.exports = function (missing) {\n\tthrow new Error('Missing ' + missing)\n};"
+  },
+  {
+    "__docId__": 32,
+    "kind": "function",
+    "static": true,
+    "variation": null,
+    "name": "exports",
+    "memberof": "src/throw-if-missing.js",
+    "longname": "src/throw-if-missing.js~exports",
+    "access": null,
+    "export": false,
+    "importPath": "ovchip-api/src/throw-if-missing.js",
+    "importStyle": null,
+    "description": null,
+    "lineNumber": 3,
+    "undocument": true,
+    "params": [
+      {
+        "name": "missing",
+        "types": [
+          "*"
+        ]
+      }
+    ],
+    "generator": false
+  },
+  {
+    "__docId__": 34,
+    "kind": "external",
+    "static": true,
+    "variation": null,
+    "name": "Infinity",
+    "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Infinity",
+    "memberof": "BuiltinExternal/ECMAScriptExternal.js",
+    "longname": "BuiltinExternal/ECMAScriptExternal.js~Infinity",
+    "access": null,
+    "description": "",
+    "builtinExternal": true
+  },
+  {
+    "__docId__": 35,
+    "kind": "external",
+    "static": true,
+    "variation": null,
+    "name": "NaN",
+    "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/NaN",
+    "memberof": "BuiltinExternal/ECMAScriptExternal.js",
+    "longname": "BuiltinExternal/ECMAScriptExternal.js~NaN",
+    "access": null,
+    "description": "",
+    "builtinExternal": true
+  },
+  {
+    "__docId__": 36,
+    "kind": "external",
+    "static": true,
+    "variation": null,
+    "name": "undefined",
+    "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/undefined",
+    "memberof": "BuiltinExternal/ECMAScriptExternal.js",
+    "longname": "BuiltinExternal/ECMAScriptExternal.js~undefined",
+    "access": null,
+    "description": "",
+    "builtinExternal": true
+  },
+  {
+    "__docId__": 37,
+    "kind": "external",
+    "static": true,
+    "variation": null,
+    "name": "null",
+    "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/null",
+    "memberof": "BuiltinExternal/ECMAScriptExternal.js",
+    "longname": "BuiltinExternal/ECMAScriptExternal.js~null",
+    "access": null,
+    "description": "",
+    "builtinExternal": true
+  },
+  {
+    "__docId__": 38,
+    "kind": "external",
+    "static": true,
+    "variation": null,
+    "name": "Object",
+    "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object",
+    "memberof": "BuiltinExternal/ECMAScriptExternal.js",
+    "longname": "BuiltinExternal/ECMAScriptExternal.js~Object",
+    "access": null,
+    "description": "",
+    "builtinExternal": true
+  },
+  {
+    "__docId__": 39,
+    "kind": "external",
+    "static": true,
+    "variation": null,
+    "name": "object",
+    "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object",
+    "memberof": "BuiltinExternal/ECMAScriptExternal.js",
+    "longname": "BuiltinExternal/ECMAScriptExternal.js~object",
+    "access": null,
+    "description": "",
+    "builtinExternal": true
+  },
+  {
+    "__docId__": 40,
+    "kind": "external",
+    "static": true,
+    "variation": null,
+    "name": "Function",
+    "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Function",
+    "memberof": "BuiltinExternal/ECMAScriptExternal.js",
+    "longname": "BuiltinExternal/ECMAScriptExternal.js~Function",
+    "access": null,
+    "description": "",
+    "builtinExternal": true
+  },
+  {
+    "__docId__": 41,
+    "kind": "external",
+    "static": true,
+    "variation": null,
+    "name": "function",
+    "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Function",
+    "memberof": "BuiltinExternal/ECMAScriptExternal.js",
+    "longname": "BuiltinExternal/ECMAScriptExternal.js~function",
+    "access": null,
+    "description": "",
+    "builtinExternal": true
+  },
+  {
+    "__docId__": 42,
+    "kind": "external",
+    "static": true,
+    "variation": null,
+    "name": "Boolean",
+    "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Boolean",
+    "memberof": "BuiltinExternal/ECMAScriptExternal.js",
+    "longname": "BuiltinExternal/ECMAScriptExternal.js~Boolean",
+    "access": null,
+    "description": "",
+    "builtinExternal": true
+  },
+  {
+    "__docId__": 43,
+    "kind": "external",
+    "static": true,
+    "variation": null,
+    "name": "boolean",
+    "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Boolean",
+    "memberof": "BuiltinExternal/ECMAScriptExternal.js",
+    "longname": "BuiltinExternal/ECMAScriptExternal.js~boolean",
+    "access": null,
+    "description": "",
+    "builtinExternal": true
+  },
+  {
+    "__docId__": 44,
+    "kind": "external",
+    "static": true,
+    "variation": null,
+    "name": "Symbol",
+    "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Symbol",
+    "memberof": "BuiltinExternal/ECMAScriptExternal.js",
+    "longname": "BuiltinExternal/ECMAScriptExternal.js~Symbol",
+    "access": null,
+    "description": "",
+    "builtinExternal": true
+  },
+  {
+    "__docId__": 45,
+    "kind": "external",
+    "static": true,
+    "variation": null,
+    "name": "Error",
+    "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Error",
+    "memberof": "BuiltinExternal/ECMAScriptExternal.js",
+    "longname": "BuiltinExternal/ECMAScriptExternal.js~Error",
+    "access": null,
+    "description": "",
+    "builtinExternal": true
+  },
+  {
+    "__docId__": 46,
+    "kind": "external",
+    "static": true,
+    "variation": null,
+    "name": "EvalError",
+    "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/EvalError",
+    "memberof": "BuiltinExternal/ECMAScriptExternal.js",
+    "longname": "BuiltinExternal/ECMAScriptExternal.js~EvalError",
+    "access": null,
+    "description": "",
+    "builtinExternal": true
+  },
+  {
+    "__docId__": 47,
+    "kind": "external",
+    "static": true,
+    "variation": null,
+    "name": "InternalError",
+    "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/InternalError",
+    "memberof": "BuiltinExternal/ECMAScriptExternal.js",
+    "longname": "BuiltinExternal/ECMAScriptExternal.js~InternalError",
+    "access": null,
+    "description": "",
+    "builtinExternal": true
+  },
+  {
+    "__docId__": 48,
+    "kind": "external",
+    "static": true,
+    "variation": null,
+    "name": "RangeError",
+    "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/RangeError",
+    "memberof": "BuiltinExternal/ECMAScriptExternal.js",
+    "longname": "BuiltinExternal/ECMAScriptExternal.js~RangeError",
+    "access": null,
+    "description": "",
+    "builtinExternal": true
+  },
+  {
+    "__docId__": 49,
+    "kind": "external",
+    "static": true,
+    "variation": null,
+    "name": "ReferenceError",
+    "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/ReferenceError",
+    "memberof": "BuiltinExternal/ECMAScriptExternal.js",
+    "longname": "BuiltinExternal/ECMAScriptExternal.js~ReferenceError",
+    "access": null,
+    "description": "",
+    "builtinExternal": true
+  },
+  {
+    "__docId__": 50,
+    "kind": "external",
+    "static": true,
+    "variation": null,
+    "name": "SyntaxError",
+    "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/SyntaxError",
+    "memberof": "BuiltinExternal/ECMAScriptExternal.js",
+    "longname": "BuiltinExternal/ECMAScriptExternal.js~SyntaxError",
+    "access": null,
+    "description": "",
+    "builtinExternal": true
+  },
+  {
+    "__docId__": 51,
+    "kind": "external",
+    "static": true,
+    "variation": null,
+    "name": "TypeError",
+    "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/TypeError",
+    "memberof": "BuiltinExternal/ECMAScriptExternal.js",
+    "longname": "BuiltinExternal/ECMAScriptExternal.js~TypeError",
+    "access": null,
+    "description": "",
+    "builtinExternal": true
+  },
+  {
+    "__docId__": 52,
+    "kind": "external",
+    "static": true,
+    "variation": null,
+    "name": "URIError",
+    "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/URIError",
+    "memberof": "BuiltinExternal/ECMAScriptExternal.js",
+    "longname": "BuiltinExternal/ECMAScriptExternal.js~URIError",
+    "access": null,
+    "description": "",
+    "builtinExternal": true
+  },
+  {
+    "__docId__": 53,
+    "kind": "external",
+    "static": true,
+    "variation": null,
+    "name": "Number",
+    "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Number",
+    "memberof": "BuiltinExternal/ECMAScriptExternal.js",
+    "longname": "BuiltinExternal/ECMAScriptExternal.js~Number",
+    "access": null,
+    "description": "",
+    "builtinExternal": true
+  },
+  {
+    "__docId__": 54,
+    "kind": "external",
+    "static": true,
+    "variation": null,
+    "name": "number",
+    "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Number",
+    "memberof": "BuiltinExternal/ECMAScriptExternal.js",
+    "longname": "BuiltinExternal/ECMAScriptExternal.js~number",
+    "access": null,
+    "description": "",
+    "builtinExternal": true
+  },
+  {
+    "__docId__": 55,
+    "kind": "external",
+    "static": true,
+    "variation": null,
+    "name": "Date",
+    "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Date",
+    "memberof": "BuiltinExternal/ECMAScriptExternal.js",
+    "longname": "BuiltinExternal/ECMAScriptExternal.js~Date",
+    "access": null,
+    "description": "",
+    "builtinExternal": true
+  },
+  {
+    "__docId__": 56,
+    "kind": "external",
+    "static": true,
+    "variation": null,
+    "name": "String",
+    "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String",
+    "memberof": "BuiltinExternal/ECMAScriptExternal.js",
+    "longname": "BuiltinExternal/ECMAScriptExternal.js~String",
+    "access": null,
+    "description": "",
+    "builtinExternal": true
+  },
+  {
+    "__docId__": 57,
+    "kind": "external",
+    "static": true,
+    "variation": null,
+    "name": "string",
+    "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String",
+    "memberof": "BuiltinExternal/ECMAScriptExternal.js",
+    "longname": "BuiltinExternal/ECMAScriptExternal.js~string",
+    "access": null,
+    "description": "",
+    "builtinExternal": true
+  },
+  {
+    "__docId__": 58,
+    "kind": "external",
+    "static": true,
+    "variation": null,
+    "name": "RegExp",
+    "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/RegExp",
+    "memberof": "BuiltinExternal/ECMAScriptExternal.js",
+    "longname": "BuiltinExternal/ECMAScriptExternal.js~RegExp",
+    "access": null,
+    "description": "",
+    "builtinExternal": true
+  },
+  {
+    "__docId__": 59,
+    "kind": "external",
+    "static": true,
+    "variation": null,
+    "name": "Array",
+    "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array",
+    "memberof": "BuiltinExternal/ECMAScriptExternal.js",
+    "longname": "BuiltinExternal/ECMAScriptExternal.js~Array",
+    "access": null,
+    "description": "",
+    "builtinExternal": true
+  },
+  {
+    "__docId__": 60,
+    "kind": "external",
+    "static": true,
+    "variation": null,
+    "name": "Int8Array",
+    "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Int8Array",
+    "memberof": "BuiltinExternal/ECMAScriptExternal.js",
+    "longname": "BuiltinExternal/ECMAScriptExternal.js~Int8Array",
+    "access": null,
+    "description": "",
+    "builtinExternal": true
+  },
+  {
+    "__docId__": 61,
+    "kind": "external",
+    "static": true,
+    "variation": null,
+    "name": "Uint8Array",
+    "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Uint8Array",
+    "memberof": "BuiltinExternal/ECMAScriptExternal.js",
+    "longname": "BuiltinExternal/ECMAScriptExternal.js~Uint8Array",
+    "access": null,
+    "description": "",
+    "builtinExternal": true
+  },
+  {
+    "__docId__": 62,
+    "kind": "external",
+    "static": true,
+    "variation": null,
+    "name": "Uint8ClampedArray",
+    "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Uint8ClampedArray",
+    "memberof": "BuiltinExternal/ECMAScriptExternal.js",
+    "longname": "BuiltinExternal/ECMAScriptExternal.js~Uint8ClampedArray",
+    "access": null,
+    "description": "",
+    "builtinExternal": true
+  },
+  {
+    "__docId__": 63,
+    "kind": "external",
+    "static": true,
+    "variation": null,
+    "name": "Int16Array",
+    "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Int16Array",
+    "memberof": "BuiltinExternal/ECMAScriptExternal.js",
+    "longname": "BuiltinExternal/ECMAScriptExternal.js~Int16Array",
+    "access": null,
+    "description": "",
+    "builtinExternal": true
+  },
+  {
+    "__docId__": 64,
+    "kind": "external",
+    "static": true,
+    "variation": null,
+    "name": "Uint16Array",
+    "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Uint16Array",
+    "memberof": "BuiltinExternal/ECMAScriptExternal.js",
+    "longname": "BuiltinExternal/ECMAScriptExternal.js~Uint16Array",
+    "access": null,
+    "description": "",
+    "builtinExternal": true
+  },
+  {
+    "__docId__": 65,
+    "kind": "external",
+    "static": true,
+    "variation": null,
+    "name": "Int32Array",
+    "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Int32Array",
+    "memberof": "BuiltinExternal/ECMAScriptExternal.js",
+    "longname": "BuiltinExternal/ECMAScriptExternal.js~Int32Array",
+    "access": null,
+    "description": "",
+    "builtinExternal": true
+  },
+  {
+    "__docId__": 66,
+    "kind": "external",
+    "static": true,
+    "variation": null,
+    "name": "Uint32Array",
+    "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Uint32Array",
+    "memberof": "BuiltinExternal/ECMAScriptExternal.js",
+    "longname": "BuiltinExternal/ECMAScriptExternal.js~Uint32Array",
+    "access": null,
+    "description": "",
+    "builtinExternal": true
+  },
+  {
+    "__docId__": 67,
+    "kind": "external",
+    "static": true,
+    "variation": null,
+    "name": "Float32Array",
+    "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Float32Array",
+    "memberof": "BuiltinExternal/ECMAScriptExternal.js",
+    "longname": "BuiltinExternal/ECMAScriptExternal.js~Float32Array",
+    "access": null,
+    "description": "",
+    "builtinExternal": true
+  },
+  {
+    "__docId__": 68,
+    "kind": "external",
+    "static": true,
+    "variation": null,
+    "name": "Float64Array",
+    "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Float64Array",
+    "memberof": "BuiltinExternal/ECMAScriptExternal.js",
+    "longname": "BuiltinExternal/ECMAScriptExternal.js~Float64Array",
+    "access": null,
+    "description": "",
+    "builtinExternal": true
+  },
+  {
+    "__docId__": 69,
+    "kind": "external",
+    "static": true,
+    "variation": null,
+    "name": "Map",
+    "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map",
+    "memberof": "BuiltinExternal/ECMAScriptExternal.js",
+    "longname": "BuiltinExternal/ECMAScriptExternal.js~Map",
+    "access": null,
+    "description": "",
+    "builtinExternal": true
+  },
+  {
+    "__docId__": 70,
+    "kind": "external",
+    "static": true,
+    "variation": null,
+    "name": "Set",
+    "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Set",
+    "memberof": "BuiltinExternal/ECMAScriptExternal.js",
+    "longname": "BuiltinExternal/ECMAScriptExternal.js~Set",
+    "access": null,
+    "description": "",
+    "builtinExternal": true
+  },
+  {
+    "__docId__": 71,
+    "kind": "external",
+    "static": true,
+    "variation": null,
+    "name": "WeakMap",
+    "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/WeakMap",
+    "memberof": "BuiltinExternal/ECMAScriptExternal.js",
+    "longname": "BuiltinExternal/ECMAScriptExternal.js~WeakMap",
+    "access": null,
+    "description": "",
+    "builtinExternal": true
+  },
+  {
+    "__docId__": 72,
+    "kind": "external",
+    "static": true,
+    "variation": null,
+    "name": "WeakSet",
+    "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/WeakSet",
+    "memberof": "BuiltinExternal/ECMAScriptExternal.js",
+    "longname": "BuiltinExternal/ECMAScriptExternal.js~WeakSet",
+    "access": null,
+    "description": "",
+    "builtinExternal": true
+  },
+  {
+    "__docId__": 73,
+    "kind": "external",
+    "static": true,
+    "variation": null,
+    "name": "ArrayBuffer",
+    "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/ArrayBuffer",
+    "memberof": "BuiltinExternal/ECMAScriptExternal.js",
+    "longname": "BuiltinExternal/ECMAScriptExternal.js~ArrayBuffer",
+    "access": null,
+    "description": "",
+    "builtinExternal": true
+  },
+  {
+    "__docId__": 74,
+    "kind": "external",
+    "static": true,
+    "variation": null,
+    "name": "DataView",
+    "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/DataView",
+    "memberof": "BuiltinExternal/ECMAScriptExternal.js",
+    "longname": "BuiltinExternal/ECMAScriptExternal.js~DataView",
+    "access": null,
+    "description": "",
+    "builtinExternal": true
+  },
+  {
+    "__docId__": 75,
+    "kind": "external",
+    "static": true,
+    "variation": null,
+    "name": "JSON",
+    "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/JSON",
+    "memberof": "BuiltinExternal/ECMAScriptExternal.js",
+    "longname": "BuiltinExternal/ECMAScriptExternal.js~JSON",
+    "access": null,
+    "description": "",
+    "builtinExternal": true
+  },
+  {
+    "__docId__": 76,
+    "kind": "external",
+    "static": true,
+    "variation": null,
+    "name": "Promise",
+    "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise",
+    "memberof": "BuiltinExternal/ECMAScriptExternal.js",
+    "longname": "BuiltinExternal/ECMAScriptExternal.js~Promise",
+    "access": null,
+    "description": "",
+    "builtinExternal": true
+  },
+  {
+    "__docId__": 77,
+    "kind": "external",
+    "static": true,
+    "variation": null,
+    "name": "Generator",
+    "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Generator",
+    "memberof": "BuiltinExternal/ECMAScriptExternal.js",
+    "longname": "BuiltinExternal/ECMAScriptExternal.js~Generator",
+    "access": null,
+    "description": "",
+    "builtinExternal": true
+  },
+  {
+    "__docId__": 78,
+    "kind": "external",
+    "static": true,
+    "variation": null,
+    "name": "GeneratorFunction",
+    "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/GeneratorFunction",
+    "memberof": "BuiltinExternal/ECMAScriptExternal.js",
+    "longname": "BuiltinExternal/ECMAScriptExternal.js~GeneratorFunction",
+    "access": null,
+    "description": "",
+    "builtinExternal": true
+  },
+  {
+    "__docId__": 79,
+    "kind": "external",
+    "static": true,
+    "variation": null,
+    "name": "Reflect",
+    "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Reflect",
+    "memberof": "BuiltinExternal/ECMAScriptExternal.js",
+    "longname": "BuiltinExternal/ECMAScriptExternal.js~Reflect",
+    "access": null,
+    "description": "",
+    "builtinExternal": true
+  },
+  {
+    "__docId__": 80,
+    "kind": "external",
+    "static": true,
+    "variation": null,
+    "name": "Proxy",
+    "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Proxy",
+    "memberof": "BuiltinExternal/ECMAScriptExternal.js",
+    "longname": "BuiltinExternal/ECMAScriptExternal.js~Proxy",
+    "access": null,
+    "description": "",
+    "builtinExternal": true
+  },
+  {
+    "__docId__": 82,
+    "kind": "external",
+    "static": true,
+    "variation": null,
+    "name": "CanvasRenderingContext2D",
+    "externalLink": "https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D",
+    "memberof": "BuiltinExternal/WebAPIExternal.js",
+    "longname": "BuiltinExternal/WebAPIExternal.js~CanvasRenderingContext2D",
+    "access": null,
+    "description": "",
+    "builtinExternal": true
+  },
+  {
+    "__docId__": 83,
+    "kind": "external",
+    "static": true,
+    "variation": null,
+    "name": "DocumentFragment",
+    "externalLink": "https://developer.mozilla.org/en-US/docs/Web/API/DocumentFragment",
+    "memberof": "BuiltinExternal/WebAPIExternal.js",
+    "longname": "BuiltinExternal/WebAPIExternal.js~DocumentFragment",
+    "access": null,
+    "description": "",
+    "builtinExternal": true
+  },
+  {
+    "__docId__": 84,
+    "kind": "external",
+    "static": true,
+    "variation": null,
+    "name": "Element",
+    "externalLink": "https://developer.mozilla.org/en-US/docs/Web/API/Element",
+    "memberof": "BuiltinExternal/WebAPIExternal.js",
+    "longname": "BuiltinExternal/WebAPIExternal.js~Element",
+    "access": null,
+    "description": "",
+    "builtinExternal": true
+  },
+  {
+    "__docId__": 85,
+    "kind": "external",
+    "static": true,
+    "variation": null,
+    "name": "Event",
+    "externalLink": "https://developer.mozilla.org/en-US/docs/Web/API/Event",
+    "memberof": "BuiltinExternal/WebAPIExternal.js",
+    "longname": "BuiltinExternal/WebAPIExternal.js~Event",
+    "access": null,
+    "description": "",
+    "builtinExternal": true
+  },
+  {
+    "__docId__": 86,
+    "kind": "external",
+    "static": true,
+    "variation": null,
+    "name": "Node",
+    "externalLink": "https://developer.mozilla.org/en-US/docs/Web/API/Node",
+    "memberof": "BuiltinExternal/WebAPIExternal.js",
+    "longname": "BuiltinExternal/WebAPIExternal.js~Node",
+    "access": null,
+    "description": "",
+    "builtinExternal": true
+  },
+  {
+    "__docId__": 87,
+    "kind": "external",
+    "static": true,
+    "variation": null,
+    "name": "NodeList",
+    "externalLink": "https://developer.mozilla.org/en-US/docs/Web/API/NodeList",
+    "memberof": "BuiltinExternal/WebAPIExternal.js",
+    "longname": "BuiltinExternal/WebAPIExternal.js~NodeList",
+    "access": null,
+    "description": "",
+    "builtinExternal": true
+  },
+  {
+    "__docId__": 88,
+    "kind": "external",
+    "static": true,
+    "variation": null,
+    "name": "XMLHttpRequest",
+    "externalLink": "https://developer.mozilla.org/en/docs/Web/API/XMLHttpRequest",
+    "memberof": "BuiltinExternal/WebAPIExternal.js",
+    "longname": "BuiltinExternal/WebAPIExternal.js~XMLHttpRequest",
+    "access": null,
+    "description": "",
+    "builtinExternal": true
+  },
+  {
+    "__docId__": 89,
+    "kind": "external",
+    "static": true,
+    "variation": null,
+    "name": "AudioContext",
+    "externalLink": "https://developer.mozilla.org/en/docs/Web/API/AudioContext",
+    "memberof": "BuiltinExternal/WebAPIExternal.js",
+    "longname": "BuiltinExternal/WebAPIExternal.js~AudioContext",
+    "access": null,
+    "description": "",
+    "builtinExternal": true
+  }
+]
