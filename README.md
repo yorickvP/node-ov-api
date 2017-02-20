@@ -19,8 +19,8 @@ let instance = new OVApi(username, password);
 
 instance.authorize().then(() => { //Logs the user in and makes sure the tokens are all set
 	instance.getCards().then((results) => { //Get all the cards attached to the account
-		instance.getTransaction(results[0]['mediumId']).then(console.log).catch(console.error) //Display all the transaction today
-	}).catch(console.error) //Display errors
+		instance.getTransactions(results[0]['mediumId']).then(console.log).catch(console.error); //Display all the transaction today
+	}).catch(console.error); //Display errors
 }).catch(console.error);
 ```
 
