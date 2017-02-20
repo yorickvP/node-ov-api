@@ -2,6 +2,13 @@ import requestPromise from "request-promise";
 
 import x from "./throw-if-missing";
 
+
+const normalize_time = (t) => new Date((t / 1000 | 0) * 1000)
+const normalize_record_time = (data) => Object.assign(data, {
+	transactionDateTime: normalize_time(data.transactionDateTime)
+})
+
+
 /**
  * Author: Bart0110. <br>
  * This library can be used to access basic data from the OV-chipcard network in the Netherlands.
@@ -13,8 +20,9 @@ export default class OVApi {
 	 * @param {String} password - Password used to access ov-chipkaart.nl. This field is required.
 	 * @param {String} [clientId=nmOIiEJO5khvtLBK9xad3UkkS8Ua] - Special client identifier used to access ov-chipkaart.nl.
 	 * @param {String} [clientSecret=FE8ef6bVBiyN0NeyUJ5VOWdelvQa] - Special client secret bound to the client identifier.
+	 * @param {String} [locale=nl-NL] - Locale specified to methods.
 	 */
-	constructor(username = x('Username'), password = x('Password'), clientId = "nmOIiEJO5khvtLBK9xad3UkkS8Ua", clientSecret = "FE8ef6bVBiyN0NeyUJ5VOWdelvQa") {
+	constructor(username = x('Username'), password = x('Password'), clientId = "nmOIiEJO5khvtLBK9xad3UkkS8Ua", clientSecret = "FE8ef6bVBiyN0NeyUJ5VOWdelvQa", locale = 'nl-NL') {
 		/**
 		 * The client identifier.
 		 * @type {String}
@@ -101,6 +109,13 @@ export default class OVApi {
 		 * @see {@link getTransactions}
 		 */
 		this._actionEndpoint = "https://api2.ov-chipkaart.nl/femobilegateway/v1";
+
+		/**
+		 * Locale passed to TLS api.
+		 * @type {String}
+		 * @private
+		 */
+		this._locale = locale;
 
 		return this;
 	}
@@ -191,7 +206,10 @@ export default class OVApi {
 		return requestPromise({
 			method: 'POST',
 			uri: `${this._actionEndpoint}/${endpoint}`,
-			form: Object.assign({authorizationToken: this._dataToken}, form)
+			form: Object.assign({
+				authorizationToken: this._dataToken,
+				locale: this._locale
+			}, form)
 		}).then(body => {
 			const {c,o,e} = JSON.parse(body);
 			if (c !== 200) {
@@ -209,6 +227,22 @@ export default class OVApi {
 		return this._tlsRequest('cards/list');
 	}
 
+
+	/**
+	 * Get transactions with optional parameters.
+	 * @param {Number} mediumId - Unique card id. You can pull this from getCards(). This field is required.
+	 * @param {Object} NRC the 'nextRequestContext' used to get more data.
+	 * @return {Promise} - Resolve returns transactions. Reject returns an error message that occured while fetching the transactions.
+	 * @see {@link getCards}
+	 */
+	getTransactionsNRC(mediumId = x('MediumId'), nrc = {}) {
+		return this._tlsRequest("transactions", Object.assign({mediumId}, nrc))
+			.then(o => Object.assign(o, {
+				records: o.records.map(normalize_record_time),
+				continuation: () => this.getTransactionsNRC(mediumId, o.nextRequestContext)
+			}));
+	}
+
 	/**
 	 * Get transactions between two dates.
 	 * @param {Number} mediumId - Unique card id. You can pull this from getCards(). This field is required.
@@ -220,12 +254,7 @@ export default class OVApi {
 	 */
 	getTransactions(mediumId = x('MediumId'), startDate = (new Date().toISOString().slice(0, 10)),
 				   endDate = (new Date().toISOString().slice(0, 10)), offset = 0) {
-		return this._tlsRequest("transactions", {
-			mediumId: mediumId,
-			offset: offset,
-			startDate: startDate,
-			endDate: endDate
-		});
+		return this.getTransactionsNRC(mediumId, {offset, startDate, endDate});
 	}
 
 	/**
