@@ -1,6 +1,6 @@
 {
   "name": "OVApi",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "description": "OV Chipkaart API",
   "main": "./build/OVApi.js",
   "dependencies": {
@@ -32,5 +32,9 @@
   "engines": {
     "node": ">=6.3.0"
   },
-  "author": "Bart0110"
+  "author": "Bart0110 (OVChip group)",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/OVChip/ovchipapi-node.git"
+  }
 }

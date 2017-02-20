@@ -99,7 +99,7 @@ export default class OVApi {
 		 * @type {String}
 		 * @private
 		 */
-		this._loginEndpoint = "https://login.ov-chipkaart.nl/oauth2/token";
+		this._loginEndpoint = 'https://login.ov-chipkaart.nl/oauth2/token';
 
 		/**
 		 * Endpoint used to perform certain actions.
@@ -108,7 +108,7 @@ export default class OVApi {
 		 * @see {@link getCards}
 		 * @see {@link getTransactions}
 		 */
-		this._actionEndpoint = "https://api2.ov-chipkaart.nl/femobilegateway/v1";
+		this._actionEndpoint = 'https://api2.ov-chipkaart.nl/femobilegateway/v1';
 
 		/**
 		 * Locale passed to TLS api.
