@@ -230,7 +230,7 @@ export default class OVApi {
 		return this._tlsRequest("transactions", Object.assign({mediumId}, nrc))
 			.then(o => Object.assign(o, {
 				records: o.records.map(normalize_record_time),
-				continuation: () => this.getTransactionsNRC(mediumId, o.nextRequestContext)
+				continuation: () => this.getTransactionsNRC(mediumId, o['nextRequestContext'])
 			}));
 	}
 
@@ -246,25 +246,6 @@ export default class OVApi {
 	getTransactions(mediumId = x('MediumId'), startDate = (new Date().toISOString().slice(0, 10)),
 				   endDate = (new Date().toISOString().slice(0, 10)), offset = 0) {
 		return this.getTransactionsNRC(mediumId, {offset, startDate, endDate});
-	}
-
-	/**
-	 * Get transactions between two dates. This function doesn't iterate if it couldn't fetch all records in one request.
-	 * @param {Number} mediumId - Unique card id. You can pull this from getCards(). This field is required.
-	 * @param {String} [startDate=current_date] - The date were the server should start looking. Correct syntax = `YYYY-MM-DD`.
-	 * @param {String} [endDate=current_date] - The date were the server should stop looking. Correct syntax = `YYYY-MM-DD`.
-	 * @param {Number} [offset=0] - How many records the server should skip.
-	 * @return {Promise} - Resolve returns transactions. Reject returns an error message that occured while fetching the transactions.
-	 * @see {@link getCards}
-	 */
-	getRawTransactions(mediumId = x('MediumId'), startDate = (new Date().toISOString().slice(0, 10)),
-					   endDate = (new Date().toISOString().slice(0, 10)), offset = 0) {
-		return this._tlsRequest("transactions", {
-			mediumId: mediumId,
-			offset: offset,
-			startDate: startDate,
-			endDate: endDate
-		});
 	}
 
 	/**
