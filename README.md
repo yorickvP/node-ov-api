@@ -9,9 +9,9 @@ You can use this wrapper to fetch:
 - Check out points
 
 ### Install:
-First run ```npm install --save OVApi```
+First run ```npm install --save ovchip-api```
 
-Than add ```const OVApi = require("ovchip-api")``` or ```import OVApi from "ovchip-api"``` 
+Than add ```import OVApi from "ovchip-api"``` 
 
 ### Examples:
 ```javascript
