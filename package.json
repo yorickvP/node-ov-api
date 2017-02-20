@@ -27,7 +27,8 @@
     "start": "node ./build/test.js",
     "start-dev": "babel-node ./test.js",
     "docs": "esdoc -c .esdoc.json",
-    "prepublish": "gulp build"
+    "prepublish": "gulp build",
+    "gh-pages": "./update-gh-pages.sh"
   },
   "engines": {
     "node": ">=6.3.0"
