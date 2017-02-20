@@ -144,7 +144,7 @@ export default class OVApi {
 	 * @return {Promise} - Resolve returns token used to create data token. Reject returns an error message that occured while logging in.
 	 */
 	_login() {
-		if (new Date() < this._expireDate && this.loginToken != null)
+		if (new Date() < this._expireDate && this._loginToken != null)
 			return Promise.resolve(this._loginToken);
 
 		return this._oAuthRequest({
