@@ -11,7 +11,7 @@ You can use this wrapper to fetch:
 ### Install:
 First run ```npm install --save OVApi```
 
-Than add ```const OVApi = require("OVApi")``` or ```import OVApi from "OVApi"``` 
+Than add ```const OVApi = require("ovchip-api")``` or ```import OVApi from "ovchip-api"``` 
 
 ### Examples:
 ```javascript
